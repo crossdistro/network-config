@@ -1,0 +1,17 @@
+# The blocks 192.0.2.0/24 (TEST-NET-1), 198.51.100.0/24 (TEST-NET-2),
+# and 203.0.113.0/24 (TEST-NET-3) are provided for use in
+
+profiles:
+    profile0:
+        interface: eth0
+        alias: 5
+        addresses:
+            - 192.0.2.1/24
+            - 192.0.2.2/24
+        routes:
+            - target: 198.51.100.0/24
+              gateway: 192.0.2.3
+    profile1:
+        interface: eth0
+        addresses:
+            - 192.0.2.4

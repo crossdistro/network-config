@@ -1,0 +1,38 @@
+#!/usr/bin/python
+
+import argparse
+import yaml
+
+parser = argparse.ArgumentParser()
+parser.set_defaults(config=None, action=None)
+parser.add_argument("profile")
+parser.add_argument("action")
+
+options = parser.parse_args()
+
+with open("config.yaml") as stream:
+    configuration = yaml.load(stream)
+
+profile_name = options.profile
+profile = configuration["profiles"][profile_name]
+action = options.action
+interface = profile["interface"]
+
+assert action in ["up", "down"]
+
+add_delete = {"up": "add", "down": "delete"}[action]
+
+def run(command):
+    print(' '.join(command))
+
+run(["ip", "link", "set", interface, action])
+for address in profile.get("addresses", []):
+    command = ["ip", "address", add_delete, address, "dev", interface]
+    if "alias" in profile:
+        command += ["label", "{interface}:{alias}".format(**profile)]
+    run(command)
+for route in profile.get("routees", []):
+    command = ["ip", "address", add_delete, address, "dev", interface]
+    if "alias" in profile:
+        command += ["label", "{interface}:{alias}".format(**profile)]
+    run(command)
