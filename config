@@ -2,6 +2,7 @@
 
 import argparse
 import yaml
+import iproute
 
 parser = argparse.ArgumentParser()
 parser.set_defaults(config=None, action=None)
@@ -22,17 +23,15 @@ assert action in ["up", "down"]
 
 add_delete = {"up": "add", "down": "delete"}[action]
 
-def run(command):
-    print(' '.join(command))
+def run(commands):
+    for command in commands:
+        print(' '.join(command))
 
-run(["ip", "link", "set", interface, action])
+if action == "up":
+    run(iproute.ip_link_set_up(interface))
+
 for address in profile.get("addresses", []):
-    command = ["ip", "address", add_delete, address, "dev", interface]
-    if "alias" in profile:
-        command += ["label", "{interface}:{alias}".format(**profile)]
-    run(command)
-for route in profile.get("routees", []):
-    command = ["ip", "address", add_delete, address, "dev", interface]
-    if "alias" in profile:
-        command += ["label", "{interface}:{alias}".format(**profile)]
-    run(command)
+    run(iproute.ip_address(add_delete, address, interface, profile.get("alias")))
+
+for route in profile.get("routes", []):
+    run(iproute.ip_route(add_delete, route["network"], route.get("gateway"), interface))
