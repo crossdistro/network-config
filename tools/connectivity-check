@@ -1,0 +1,107 @@
+#!/usr/bin/python
+
+from socket import AF_INET, AF_INET6
+import pyroute2
+import yaml
+import dns.resolver
+import random, string
+import urllib.request
+
+import logging
+logging.basicConfig(format="%(message)s", level=logging.INFO)
+log = logging.getLogger()
+
+class ConnectivityCheck:
+    def __init__(self):
+        self.ip = pyroute2.IPRoute()
+        self.checks = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.ip.close()
+
+    def discover_default_gateways(self):
+        log.info("Checking for default route...")
+        self.default_gateways = []
+        for family in AF_INET, AF_INET6:
+            for route in self.ip.get_default_routes(family=family):
+                gateway = route.get_attr("RTA_GATEWAY")
+                log.info("  - Found gateway: {}".format(gateway))
+                self.default_gateways.append(gateway)
+        self.add("default-gateway", bool(self.default_gateways))
+
+    def discover_default_dns_servers(self):
+        self.default_dns_servers = []
+        with open("/etc/resolv.conf") as stream:
+            for line in stream:
+                if line.startswith("nameserver "):
+                    key, nameserver = line.strip().split()
+                    log.info("  - Found nameserver: {}".format(nameserver))
+                    self.default_dns_servers.append(nameserver)
+        self.add("default-dns-server", bool(self.default_dns_servers))
+
+    def random_subdomain(self):
+        return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(16))
+
+    def check_dns(self):
+        subdomain = self.random_subdomain()
+        resolver = dns.resolver.Resolver()
+
+        host = subdomain + ".wilda.nsec.0skar.cz"
+        log.info("Checking DNS query to {}".format(host))
+        try:
+            answer = resolver.query(host, "AAAA")
+        except dns.resolver.NoAnswer:
+            answer = None
+        self.add("dns-answer", bool(answer))
+
+        for item in answer or []:
+            log.info("  - Found AAAA record: {}".format(item))
+            assert str(item) == "2001:1528:132:70::1"
+
+    def check_dnssec(self):
+        log.info("Checking DNSSEC...")
+        subdomain = self.random_subdomain()
+        resolver = dns.resolver.Resolver()
+        resolver.set_flags(dns.flags.AD)
+
+        host = subdomain + ".wilda.nsec.0skar.cz"
+        log.info("Checking DNS query to {}".format(host))
+        try:
+            answer = resolver.query(host, "AAAA")
+        except dns.resolver.NoAnswer:
+            answer = None
+        self.add("dnssec-answer", bool(answer))
+        self.add("dnssec-validated-answer", answer and bool(answer.response.flags & dns.flags.AD))
+
+        for item in answer or []:
+            log.info("  - Found AAAA record: {}".format(item))
+            assert str(item) == "2001:1528:132:70::1"
+
+    def check_http(self):
+        http_url = "http://ster.nlnetlabs.nl/hotspot.txt"
+        https_url = "https://ster.nlnetlabs.nl/hotspot.txt"
+
+        with urllib.request.urlopen(http_url) as stream:
+            self.add("http", stream.read() == b"OK\n")
+        with urllib.request.urlopen(https_url) as stream:
+            self.add("http-secure", stream.read() == b"OK\n")
+
+    def add(self, name, value):
+        self.checks.append({"name": name, "value": value})
+
+    def run(self):
+        self.discover_default_gateways()
+        self.discover_default_dns_servers()
+        self.check_dns()
+        self.check_dnssec()
+        self.check_http()
+
+        return {"checks": self.checks}
+
+
+if __name__ == '__main__':
+    with ConnectivityCheck() as check:
+        print(yaml.dump(check.run()))
