@@ -3,12 +3,13 @@
 import subprocess
 import argparse
 import pyroute2
+import itertools
 
 def wait_for_carrier(ifname):
     with pyroute2.IPRoute() as ipr:
         ipr.bind()
         while True:
-            for message in ipr.get():
+            for message in itertools.chain(ipr.get_links(), ipr.get()):
                 if message['event'] != 'RTM_NEWLINK':
                     continue
                 attrs = dict(message['attrs'])
